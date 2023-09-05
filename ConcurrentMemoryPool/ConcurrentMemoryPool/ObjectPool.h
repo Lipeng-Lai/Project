@@ -1,9 +1,4 @@
-#include <iostream>
-#include <vector>
-#include <time.h>
-using std::cout;
-using std::endl;
-
+#include "Common.h"
 //#ifdef _WIN32
 //#include<windows.h>
 //#else

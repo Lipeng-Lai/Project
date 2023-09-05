@@ -1,15 +1,27 @@
 #pragma once
 #include <iostream>
 #include <vector>
+#include <algorithm>
+
 #include <time.h>
 #include <assert.h>
+
+#include <thread>
+#include <mutex>
+
 using std::cout;
 using std::endl;
 
 static const size_t MAX_BYTES = 256 * 1024; // 最大分配256KB的内存
 static const size_t NFREELIST = 208; // 分段映射的哈希桶总数
 
-void*& NextObj(void* obj)
+#ifdef _WIN64
+	typedef unsigned long long PAGE_ID;
+#elif _WIN32
+	typedef size_t PAGE_ID;
+#endif
+
+static void*& NextObj(void* obj)
 {
 	return *(void**)obj;
 }
@@ -27,12 +39,20 @@ public:
 		_freeList = obj; // 头节点存储当前节点的地址
 	}
 
+	void PushRange(void* start, void* end) // 将内存块(也是双向链表)连接到双向自由链表
+	{
+		NextObj(end) = _freeList;
+		_freeList = start;
+	}
+
 	void* Pop()
 	{
 		assert(_freeList);
 		// 链表头删
 		void* obj = _freeList; // 当前节点存储下一个节点的地址
 		_freeList = NextObj(obj); // 将下一个节点的地址存储到头节点中
+
+		return obj;
 	}
 
 	bool Empty()
@@ -41,8 +61,14 @@ public:
 		return _freeList == nullptr;
 	}
 
+	size_t& MaxSize()
+	{
+		return _maxSize;
+	}
+
 private:
 	void* _freeList = nullptr;
+	size_t _maxSize = 1;
 };
 
 
@@ -57,7 +83,7 @@ public:
 	// [8*1024+1,64*1024]		1024byte对齐     freelist[128,184)
 	// [64*1024+1,256*1024]		8*1024byte对齐   freelist[184,208)
 
-	/* 普通人写的普通写法(效率一般, 但直观)
+	/* 普通写法(效率一般, 但直观)
 	size_t _RoundUp(size_t size, size_t alignNum)
 	{
 		size_t alignSize;
@@ -159,4 +185,80 @@ public:
 
 		return -1;
 	}
+
+	// threadCache一次从CentralCache获取多少个对象
+	static size_t NumMoveSize(size_t size) // size = 8bytes, 16....
+	{
+		assert(size > 0);
+		// [2, 512] 一次批量移动多少个对象的慢启动上限值
+		// 小对象一次批量上限高
+		// 大对象一次批量上限低
+		int num = MAX_BYTES / size;
+
+		if (num < 2) num = 2;
+		if (num > 512) num = 512;
+
+		return num;
+	}
+};
+
+
+// 管理多个连续页大块内存
+struct Span
+{
+	PAGE_ID _pageId = 0; // 大块内存起始页的页号
+	size_t _n = 0; // 页的数量
+
+	Span* _next = nullptr; // 双向链表的结构
+	Span* _prev = nullptr;
+
+	size_t _useCount = 0; // 切好小内存，被分配给ThreadCache的计数
+	void* _freeList = nullptr; // 切好的小块内存的自由链表
+};
+
+// 带头双向循环链表
+class SpanList
+{
+public:
+	SpanList()
+	{
+		_head = new Span;
+		_head->_next = _head;
+		_head->_prev = _head;
+	}
+
+	void Insert(Span* pos, Span* newSpan)
+	{
+		assert(pos);
+		assert(newSpan);
+
+		Span* prev = pos->_prev; // 当前节点的前一个节点
+		// 结构: prev ~ newSpan ~ pos
+
+		// 双向链表的连接操作
+		prev->_next = newSpan;
+		newSpan->_prev = prev;
+		newSpan->_next = pos;
+		pos->_prev = newSpan;
+	}
+
+	void Erase(Span* pos)
+	{
+		assert(pos);
+		assert(pos != _head);
+
+		// 双向链表的删除操作
+		Span* prev = pos->_prev;
+		Span* next = pos->_next;
+
+		prev->_next = next;
+		next->_prev = prev;
+
+		// 此时的删除Span，其实只是将该Span归还给下一层的PAGE_Cache，所以无需删除
+	}
+
+private:
+	Span* _head;
+public:
+	std::mutex _mtx; // 桶锁：访问同一个桶时才需要加锁
 };
