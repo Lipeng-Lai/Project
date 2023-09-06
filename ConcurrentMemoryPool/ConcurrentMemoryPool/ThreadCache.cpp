@@ -8,7 +8,7 @@ void* ThreadCache::FetchFromCentralCache(size_t index, size_t size)
 	// 2. 如果你不断有这个size大小内存需求, 那么batchNum就会不断增长, 直到上限512
 	// 3. size越大, 一次向CentralCache要的batchNum就会越小
 	// 4. size越小, 一次向CentralCache要的batchNum就会越大
-	size_t batchNum = std::min(_freeLists[index].MaxSize(), SizeClass::NumMoveSize(size));
+	size_t batchNum = min(_freeLists[index].MaxSize(), SizeClass::NumMoveSize(size));
 
 	if (_freeLists[index].MaxSize() == batchNum)
 	{
@@ -19,7 +19,7 @@ void* ThreadCache::FetchFromCentralCache(size_t index, size_t size)
 	void* start = nullptr;
 	void* end = nullptr;
 	size_t actuaNum = CentralCache::GetInstance()->FetchRangeObj(start, end, batchNum, size);
-	assert(actuaNum > 1); // 至少得有一个
+	assert(actuaNum >= 1); // 至少得有一个
 
 	if (actuaNum == 1)
 	{

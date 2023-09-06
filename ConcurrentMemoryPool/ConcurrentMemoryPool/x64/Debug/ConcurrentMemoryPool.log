@@ -1,6 +1,3 @@
-﻿  CentralCache.cpp
-D:\CS_Project\ConcurrentMemoryPool\ConcurrentMemoryPool\Common.h(196,11): warning C4267: “初始化”: 从“size_t”转换到“int”，可能丢失数据
-  UnitTest.cpp
-D:\CS_Project\ConcurrentMemoryPool\ConcurrentMemoryPool\Common.h(196,11): warning C4267: “初始化”: 从“size_t”转换到“int”，可能丢失数据
-  正在生成代码...
+﻿  UnitTest.cpp
+D:\CS_Project\ConcurrentMemoryPool\ConcurrentMemoryPool\Common.h(222,11): warning C4267: “初始化”: 从“size_t”转换到“int”，可能丢失数据
   ConcurrentMemoryPool.vcxproj -> D:\CS_Project\ConcurrentMemoryPool\x64\Debug\ConcurrentMemoryPool.exe

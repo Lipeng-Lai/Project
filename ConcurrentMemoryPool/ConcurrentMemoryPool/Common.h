@@ -14,12 +14,38 @@ using std::endl;
 
 static const size_t MAX_BYTES = 256 * 1024; // 最大分配256KB的内存
 static const size_t NFREELIST = 208; // 分段映射的哈希桶总数
+static const size_t NPAGES = 129; // PageCache页数的最大值
+static const size_t PAGE_SHIFT = 13; // 除以8KB
+
+#ifdef _WIN32
+#include <windows.h>
+#else
+// ...
+#endif
 
 #ifdef _WIN64
-	typedef unsigned long long PAGE_ID;
+typedef unsigned long long PAGE_ID;
 #elif _WIN32
-	typedef size_t PAGE_ID;
+typedef size_t PAGE_ID;
+#else
+// linux
 #endif
+
+// 直接去堆上按页申请空间
+inline static void* SystemAlloc(size_t kpage)
+{
+#ifdef _WIN32
+	void* ptr = VirtualAlloc(0, kpage << 13, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+#else
+	// linux下brk mmap等
+#endif
+
+	if (ptr == nullptr)
+		throw std::bad_alloc();
+
+	return ptr;
+}
+
 
 static void*& NextObj(void* obj)
 {
@@ -200,6 +226,21 @@ public:
 
 		return num;
 	}
+
+	// 计算一次向系统获取几个页
+	// 单个对象 8byte
+	// ...
+	// 单个对象256KB
+	static size_t NumMovePage(size_t size)
+	{
+		size_t num = NumMoveSize(size);
+		size_t npage = num * size;
+
+		npage >>= PAGE_SHIFT;
+		if (npage == 0) npage = 1; // 不足一页，按一页给
+
+		return npage;
+	}
 };
 
 
@@ -225,6 +266,16 @@ public:
 		_head = new Span;
 		_head->_next = _head;
 		_head->_prev = _head;
+	}
+
+	Span* Begin()
+	{
+		return _head->_next;
+	}
+
+	Span* End()
+	{
+		return _head;
 	}
 
 	void Insert(Span* pos, Span* newSpan)
@@ -256,6 +307,25 @@ public:
 
 		// 此时的删除Span，其实只是将该Span归还给下一层的PAGE_Cache，所以无需删除
 	}
+
+	void PushFront(Span* span)
+	{
+		Insert(Begin(), span);
+	}
+
+	Span* PopFront()
+	{
+		Span* front = _head->_next;
+		Erase(front);
+		return front;
+	}
+
+	bool Empty()
+	{
+		return _head->_next == _head;
+	}
+
+
 
 private:
 	Span* _head;
